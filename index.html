@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Çöp Adam Defter Savaşı V3</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #2d3436; /* Masa rengi */
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            touch-action: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            height: 400px;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background-color: #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 4px;
+        }
+
+        #ui {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            font-size: 22px;
+            font-weight: 900;
+            color: #2d3436;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 5px 15px;
+            border-radius: 10px;
+            border: 2px solid #2d3436;
+            pointer-events: none;
+        }
+
+        #mobileControls {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 800px;
+            margin-top: 15px;
+            padding: 0 10px;
+            box-sizing: border-box;
+        }
+
+        .btn {
+            background: #ff7675;
+            color: white;
+            border: none;
+            padding: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 12px;
+            box-shadow: 0 4px 0 #d63031;
+            touch-action: manipulation;
+            user-select: none;
+            cursor: pointer;
+            width: 30%;
+            transition: transform 0.1s;
+        }
+        
+        .btn:active {
+            transform: translateY(4px);
+            box-shadow: none;
+        }
+
+        #btnFire {
+            background: #fab1a0;
+            color: #2d3436;
+            box-shadow: 0 4px 0 #e17055;
+        }
+
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(45, 52, 54, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 10;
+            border-radius: 4px;
+        }
+        
+        #startBtn {
+            padding: 15px 40px;
+            font-size: 24px;
+            cursor: pointer;
+            background: #00b894;
+            border: none;
+            color: white;
+            border-radius: 8px;
+            margin-top: 20px;
+            box-shadow: 0 5px 0 #006266;
+            font-family: inherit;
+            font-weight: bold;
+        }
+        
+        #startBtn:active {
+            transform: translateY(5px);
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        <div id="ui">SKOR: 0</div>
+        
+        <div id="startScreen">
+            <h1 style="font-size: 40px; margin-bottom: 10px;">DEFTER SAVAŞI</h1>
+            <p style="font-size: 18px; opacity: 0.8;">Kalemden kaç, engelleri vur!</p>
+            <button id="startBtn" onclick="startGame()">BAŞLA</button>
+        </div>
+    </div>
+
+    <div id="mobileControls">
+        <button class="btn" ontouchstart="moveUp()" onmousedown="moveUp()">▲</button>
+        <button id="btnFire" class="btn" ontouchstart="fire()" onmousedown="fire()">● ATEŞ</button>
+        <button class="btn" ontouchstart="moveDown()" onmousedown="moveDown()">▼</button>
+    </div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const startScreen = document.getElementById('startScreen');
+
+    let isPlaying = false;
+    let score = 0;
+    let gameSpeed = 4;
+    let frame = 0;
+
+    const laneHeight = canvas.height / 3; 
+    const lanes = [laneHeight * 0.5, laneHeight * 1.5, laneHeight * 2.5]; 
+
+    let player = {
+        x: 100,
+        lane: 1, 
+        y: lanes[1],
+        width: 30,
+        radius: 15,
+        color: 'black'
+    };
+
+    let bullets = [];
+    let obstacles = [];
+    let particles = [];
+
+    function startGame() {
+        startScreen.style.display = 'none';
+        resetGame();
+        if (!isPlaying) {
+            isPlaying = true;
+            gameLoop();
+        }
+    }
+
+    function resetGame() {
+        score = 0;
+        gameSpeed = 5; // Biraz daha hızlı başlatıyoruz
+        bullets = [];
+        obstacles = [];
+        particles = [];
+        player.lane = 1;
+        player.y = lanes[1];
+        document.getElementById('ui').innerText = "SKOR: 0";
+    }
+
+    // --- KONTROLLER ---
+    function moveUp() { if (player.lane > 0) player.lane--; }
+    function moveDown() { if (player.lane < 2) player.lane++; }
+    
+    function fire() {
+        bullets.push({
+            x: player.x + 20,
+            y: player.y - 20,
+            speed: 15
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (!isPlaying) return;
+        if (e.key === 'ArrowUp') moveUp();
+        if (e.key === 'ArrowDown') moveDown();
+        if (e.key === ' ') fire();
+    });
+
+    // --- ÇİZİM FONKSİYONLARI ---
+
+    function drawBackground() {
+        // Kağıt Dokusu
+        ctx.fillStyle = '#fdfdfd';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Satır Çizgileri
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#a4b0be';
+        
+        for (let i = 1; i < 3; i++) {
+            let y = i * laneHeight;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(canvas.width, y);
+            ctx.stroke();
+        }
+        
+        // Kenar Çizgisi
+        ctx.strokeStyle = '#ff7675';
+        ctx.beginPath();
+        ctx.moveTo(60, 0);
+        ctx.lineTo(60, canvas.height);
+        ctx.stroke();
+    }
+
+    function drawStickman(x, y) {
+        let targetY = lanes[player.lane];
+        player.y += (targetY - player.y) * 0.15; // Yumuşak geçiş
+
+        ctx.strokeStyle = '#2d3436';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Kafa
+        ctx.beginPath();
+        ctx.arc(x, y - 45, 12, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Gövde (Hafif eğik - koşuyor hissi)
+        ctx.beginPath();
+        ctx.moveTo(x, y - 33);
+        ctx.lineTo(x + 5, y - 5);
+        ctx.stroke();
+
+        // Bacak Animasyonu
+        let runAnim = Math.sin(frame * 0.4) * 20;
+        
+        ctx.beginPath();
+        ctx.moveTo(x + 5, y - 5);
+        ctx.lineTo(x - 10 + runAnim, y + 25); // Sol Bacak
+        ctx.moveTo(x + 5, y - 5);
+        ctx.lineTo(x - 10 - runAnim, y + 25); // Sağ Bacak
+        ctx.stroke();
+
+        // Kol ve Silah
+        ctx.beginPath();
+        ctx.moveTo(x, y - 25);
+        ctx.lineTo(x + 25, y - 20);
+        ctx.stroke();
+        
+        // Altın Tabanca
+        ctx.fillStyle = '#fdcb6e';
+        ctx.fillRect(x + 25, y - 24, 18, 8);
+    }
+
+    // --- YENİ KALEM FONKSİYONU ---
+    function drawLivePencil(x, y, isDrawing) {
+        ctx.save();
+        
+        // Kalemi hafif salla (Karalama efekti)
+        let scribbleY = isDrawing ? Math.sin(frame * 0.8) * 15 : 0;
+        let scribbleX = isDrawing ? Math.cos(frame * 0.8) * 5 : 0;
+
+        // Koordinatları ayarla (Kalemin ucu tam x,y'de olsun)
+        ctx.translate(x + scribbleX, y + scribbleY);
+        ctx.rotate(-Math.PI / 4); // Kalemi 45 derece eğ
+
+        // Kalem Gövdesi (Sarı)
+        ctx.fillStyle = '#fab1a0'; 
+        ctx.fillRect(-10, -100, 20, 100);
+
+        // Kalem Ucu (Ahşap kısmı)
+        ctx.fillStyle = '#ffeaa7';
+        ctx.beginPath();
+        ctx.moveTo(-10, 0);
+        ctx.lineTo(10, 0);
+        ctx.lineTo(0, 20); // Sivri uç
+        ctx.fill();
+
+        // Kalem Ucu (Yazan kısım - Kırmızı)
+        ctx.fillStyle = '#d63031';
+        ctx.beginPath();
+        ctx.moveTo(-3, 14);
+        ctx.lineTo(3, 14);
+        ctx.lineTo(0, 20);
+        ctx.fill();
+
+        // Silgi (Kalemin arkası)
+        ctx.fillStyle = '#fd79a8';
+        ctx.fillRect(-10, -115, 20, 15);
+
+        ctx.restore();
+    }
+
+    function gameLoop() {
+        if (!isPlaying) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        frame++;
+        if(frame % 500 === 0) gameSpeed += 0.5;
+
+        drawBackground();
+        drawStickman(player.x, player.y);
+
+        // MERMİLER
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            let b = bullets[i];
+            b.x += b.speed;
+            
+            // Mermi izi (hız efekti)
+            ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(b.x - 10, b.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+
+            ctx.fillStyle = '#2d3436';
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, 4, 0, Math.PI*2);
+            ctx.fill();
+            
+            if (b.x > canvas.width) bullets.splice(i, 1);
+        }
+
+        // ENGEL OLUŞTURMA
+        if (frame % Math.floor(100 / (gameSpeed/4)) === 0) {
+            let laneIndex = Math.floor(Math.random() * 3);
+            obstacles.push({
+                x: canvas.width + 50, // Ekranın biraz dışından başlasın
+                y: lanes[laneIndex],
+                w: 40,
+                h: 40,
+                type: Math.random() > 0.5 ? 'box' : 'tri',
+                drawn: false // Henüz çizilmedi
+            });
+        }
+
+        // ENGEL YÖNETİMİ
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            let obs = obstacles[i];
+            obs.x -= gameSpeed;
+
+            // --- KALEM EFEKTİ (ÖNEMLİ KISIM) ---
+            // Eğer engel ekranın sağ tarafındaysa, kalem onu çiziyor gibi yap
+            if (obs.x > canvas.width - 150) {
+                // Kalemi engelin biraz sağında (önünde) çiz
+                drawLivePencil(obs.x + 20, obs.y - 10, true);
+            }
+
+            // ENGEL ÇİZİMİ (Tükenmez kalem kırmızısı)
+            ctx.strokeStyle = '#d63031';
+            ctx.lineWidth = 3;
+            ctx.lineJoin = 'round';
+            
+            // Hafif titrek çizgi efekti (El çizimi gibi)
+            let shake = Math.random() * 2 - 1;
+
+            if (obs.type === 'box') {
+                ctx.strokeRect(obs.x + shake, obs.y - 30 + shake, 40, 40);
+                // İçini tarama efekti
+                ctx.beginPath();
+                ctx.lineWidth = 1;
+                ctx.moveTo(obs.x, obs.y-30); ctx.lineTo(obs.x+40, obs.y+10);
+                ctx.stroke();
+            } else {
+                ctx.beginPath();
+                ctx.lineWidth = 3;
+                ctx.moveTo(obs.x + shake, obs.y + 10);
+                ctx.lineTo(obs.x + 20 + shake, obs.y - 40);
+                ctx.lineTo(obs.x + 40 + shake, obs.y + 10);
+                ctx.closePath();
+                ctx.stroke();
+            }
+
+            // ÇARPIŞMA (Oyuncu)
+            if (
+                Math.abs(player.x - obs.x) < 35 &&
+                Math.abs(player.y - obs.y) < 35
+            ) {
+                isPlaying = false;
+                startScreen.style.display = 'flex';
+                document.querySelector('#startScreen h1').innerText = "VURULDUN!";
+                document.querySelector('#startScreen p').innerText = "Skor: " + score;
+                document.getElementById('startBtn').innerText = "TEKRAR DENE";
+            }
+
+            // ÇARPIŞMA (Mermi)
+            for (let j = bullets.length - 1; j >= 0; j--) {
+                let b = bullets[j];
+                if (
+                    b.x > obs.x && 
+                    b.x < obs.x + 40 &&
+                    Math.abs(b.y - obs.y) < 45
+                ) {
+                    // Parçacık efekti
+                    for(let k=0; k<8; k++) {
+                        particles.push({
+                            x: obs.x + 20, 
+                            y: obs.y - 10, 
+                            vx: (Math.random()-0.5)*15, 
+                            vy: (Math.random()-0.5)*15, 
+                            life: 25,
+                            color: '#d63031' // Kırmızı parçalar
+                        });
+                    }
+                    obstacles.splice(i, 1);
+                    bullets.splice(j, 1);
+                    score += 10;
+                    document.getElementById('ui').innerText = "SKOR: " + score;
+                    break;
+                }
+            }
+            
+            if (obs.x < -50) obstacles.splice(i, 1);
+        }
+
+        // PARÇACIK EFEKTLERİ
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life--;
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.life / 25;
+            ctx.fillRect(p.x, p.y, 4, 4);
+            ctx.globalAlpha = 1.0;
+            if (p.life <= 0) particles.splice(i, 1);
+        }
+
+        if (isPlaying) requestAnimationFrame(gameLoop);
+    }
+</script>
+</body>
+</html>
